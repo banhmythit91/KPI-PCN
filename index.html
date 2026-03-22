@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard theo dõi chỉ tiêu Phòng Cá Nhân</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind Config -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: '#eff6ff',
+                100: '#dbeafe',
+                500: '#3b82f6',
+                600: '#2563eb',
+                800: '#1e40af',
+                900: '#1e3a8a', // Deep Blue
+              },
+              accent: {
+                50: '#fff7ed',
+                100: '#ffedd5',
+                500: '#f97316',
+                600: '#ea580c', // Bright Orange
+                800: '#9a3412',
+              }
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX compilation in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- PapaParse for Google Sheets CSV -->
+    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <!-- Recharts -->
+    <script src="https://unpkg.com/prop-types@15.6.2/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+
+    <style>
+      body { background-color: #f1f5f9; color: #0f172a; }
+      .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+      .custom-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+      /* CSS Animations */
+      @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+      .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script>
+        window.addEventListener('error', function(event) {
+            document.body.innerHTML = '<pre style="color:red; background:white; padding:20px; z-index:9999; position:relative;">' + event.message + '\n' + event.filename + ':' + event.lineno + '</pre>';
+        });
+        window.addEventListener('unhandledrejection', function(event) {
+            document.body.innerHTML = '<pre style="color:red; background:white; padding:20px; z-index:9999; position:relative;">Unhandled promise rejection: ' + event.reason + '</pre>';
+        });
+    </script>
+    <script type="text/babel">
+        console.log("Babel script started executing");
+        const { useState, useEffect, useMemo } = React;
+        const { 
+            LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+            BarChart, Bar, Cell, ComposedChart, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+            ReferenceLine
+        } = window.Recharts;
+
+        // ---- 0. GOOGLE SHEETS CONFIGURATION ----
+        // ĐIỀN CHUNG 1 LINK WEB APP TỪ APPS SCRIPT CHO CẢ NHẬP LIỆU VÀ ĐỌC DỮ LIỆU
+        const GOOGLE_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzBo0S_noXA47c5B0ygp57cvip5ZxNnvO-2uheKbs-vT_US5HSzyBHIB8T-FbMdLWOA/exec'; 
+
+        // ---- 1. CONFIGURATION & ICONS ----
+        const cvkhNames = ['Nguyễn Tuấn Anh', 'Đỗ Minh Hiếu', 'Nguyễn Anh Quân', 'Hoàng Hải Yến', 'Đỗ Quang Sơn'];
+        const months = ['Tháng 1', 'Tháng 2', 'Tháng 3'];
+
+        // Cập nhật target cho từng CVKH tại đây:
+        const kpiAreas = [
+            { id: 'vinfast', name: 'Cho vay Vinfast', unit: 'Triệu VNĐ', color: '#3b82f6', icon: '🚗', targets: { 'Nguyễn Tuấn Anh': 1000, 'Đỗ Minh Hiếu': 1000, 'Nguyễn Anh Quân': 1000, 'Hoàng Hải Yến': 1000, 'Đỗ Quang Sơn': 1000 } }, 
+            { id: 'casa', name: 'Tăng trưởng CASA', unit: 'Triệu VNĐ', color: '#ea580c', icon: '💰', targets: { 'Nguyễn Tuấn Anh': 1000, 'Đỗ Minh Hiếu': 1000, 'Nguyễn Anh Quân': 1000, 'Hoàng Hải Yến': 1000, 'Đỗ Quang Sơn': 1000 } }, 
+            { id: 'creditCard', name: 'Thẻ tín dụng', unit: 'Thẻ', color: '#8b5cf6', icon: '💳', targets: { 'Nguyễn Tuấn Anh': 50, 'Đỗ Minh Hiếu': 30, 'Nguyễn Anh Quân': 25, 'Hoàng Hải Yến': 25, 'Đỗ Quang Sơn': 40 } }, 
+            { id: 'insurance', name: 'Bảo hiểm', unit: 'Tr VNĐ', color: '#10b981', icon: '🛡️', targets: { 'Nguyễn Tuấn Anh': 30, 'Đỗ Minh Hiếu': 30, 'Nguyễn Anh Quân': 30, 'Hoàng Hải Yến': 30, 'Đỗ Quang Sơn': 30 } }, 
+            { id: 'fx', name: 'Bán ngoại tệ', unit: 'k USD', color: '#f59e0b', icon: '💱', targets: { 'Nguyễn Tuấn Anh': 200, 'Đỗ Minh Hiếu': 150, 'Nguyễn Anh Quân': 300 , 'Hoàng Hải Yến': 300, 'Đỗ Quang Sơn': 200 } }, 
+            { id: 'combo', name: 'Combo Tài lộc', unit: 'Gói', color: '#ec4899', icon: '🎁', targets: { 'Nguyễn Tuấn Anh': 15, 'Đỗ Minh Hiếu': 20, 'Nguyễn Anh Quân': 15, 'Hoàng Hải Yến': 15, 'Đỗ Quang Sơn': 25 } } 
+        ];
+        
+        // Tự động lấy số ngày hiện tại cho tiến trình Tháng 3 (Hoặc tháng đang chạy)
+        const elapsedDaysConfig = { 'Tháng 1': 31, 'Tháng 2': 28, 'Tháng 3': new Date().getDate() };
+
+        const HeaderIcon = () => (
+          <svg className="w-8 h-8 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+          </svg>
+        );
+
+        // ---- 2. EMPTY DATA GENERATOR (For fallback / manual entry) ----
+        const generateEmptyData = () => {
+            let data = {};
+            months.forEach(month => {
+                data[month] = {};
+                const daysInMonth = month === 'Tháng 2' ? 28 : 31;
+
+                cvkhNames.forEach(cvkh => {                    
+                    let dailyData = [];
+                    for(let day = 1; day <= daysInMonth; day++) {
+                        dailyData.push({
+                            day: day,
+                            vinfast: 0,
+                            casa: 0,
+                            creditCard: 0,
+                            insurance: 0,
+                            fx: 0,
+                            combo: 0
+                        });
+                    }
+                    data[month][cvkh] = dailyData;
+                });
+            });
+            return data;
+        };
+
+        const mockStore = generateEmptyData();
+
+        const processCsvData = (rows) => {
+            let data = {};
+            months.forEach(month => {
+                data[month] = {};
+                const daysInMonth = month === 'Tháng 2' ? 28 : 31;
+                
+                cvkhNames.forEach(cvkh => {
+                    let dailyData = [];
+                    let cumulative = { vinfast: 0, casa: 0, creditCard: 0, insurance: 0, fx: 0, combo: 0 };
+                    
+                    for(let day = 1; day <= daysInMonth; day++) {
+                        const matchingRows = rows.filter(r => r['Tháng'] === month && r['Tên CVKH'] === cvkh && parseInt(r['Ngày']) === day);
+                        
+                        matchingRows.forEach(row => {
+                            if (!row['Tháng']) return;
+                            cumulative.vinfast += parseFloat(row['Vinfast'] || 0);
+                            cumulative.casa += parseFloat(row['CASA'] || 0);
+                            cumulative.creditCard += parseFloat(row['Thẻ tín dụng'] || 0);
+                            cumulative.insurance += parseFloat(row['Bảo hiểm'] || 0);
+                            cumulative.fx += parseFloat(row['Ngoại tệ'] || 0);
+                            cumulative.combo += parseFloat(row['Combo'] || 0);
+                        });
+                        
+                        dailyData.push({
+                            day: day,
+                            vinfast: Number(cumulative.vinfast.toFixed(1)),
+                            casa: Number(cumulative.casa.toFixed(1)),
+                            creditCard: cumulative.creditCard,
+                            insurance: Number(cumulative.insurance.toFixed(1)),
+                            fx: Number(cumulative.fx.toFixed(1)),
+                            combo: cumulative.combo
+                        });
+                    }
+                    data[month][cvkh] = dailyData;
+                });
+            });
+            return data;
+        };
+
+        // ---- 3. COMPONENTS ----
+
+        // 3.1. Widget Card
+        const SummaryWidget = ({ title, value, unit, target, icon, color }) => {
+            const percent = Math.min((value / target) * 100, 100).toFixed(0);
+            return (
+                <div className="glass-card p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between animate-fade-in hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center space-x-2">
+                            <span className="text-2xl" aria-hidden="true">{icon}</span>
+                            <h3 className="text-slate-500 font-medium text-sm">{title}</h3>
+                        </div>
+                        <span className="px-2 py-1 text-xs font-bold rounded-full bg-slate-100 text-slate-600">
+                            KPI: {target} {unit}
+                        </span>
+                    </div>
+                    <div className="mt-2">
+                        <div className="flex items-end space-x-2 mb-1">
+                            <span className="text-3xl font-bold text-slate-800">{value.toLocaleString()}</span>
+                            <span className="text-slate-500 font-medium text-sm mb-1">{unit}</span>
+                        </div>
+                        {/* Progress Bar */}
+                        <div className="w-full bg-slate-100 rounded-full h-2.5 mt-2">
+                            <div 
+                                className="h-2.5 rounded-full" 
+                                style={{ width: `${percent}%`, backgroundColor: color }}
+                            ></div>
+                        </div>
+                        <div className="flex justify-end mt-1 text-xs font-medium">
+                            <span style={{ color: color, fontWeight: 'bold' }}>{percent}% Hoàn thành</span>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const formatNumber = (num) => {
+            return num % 1 === 0 ? num.toLocaleString() : num.toFixed(1);
+        };
+
+        // 3.2 Data Entry Form
+        const DataEntryForm = ({ cvkhName, selectedMonth, onSubmitSuccess }) => {
+            const [formData, setFormData] = useState({
+                vinfast: '', casa: '', creditCard: '', insurance: '', fx: '', combo: ''
+            });
+            const [imageFile, setImageFile] = useState(null);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                
+                if (!GOOGLE_WEB_APP_URL) {
+                    alert('Chưa cấu hình GOOGLE_WEB_APP_URL.\nThao tác lưu mô phỏng thành công! (Không lưu thật)');
+                    setFormData({ vinfast: '', casa: '', creditCard: '', insurance: '', fx: '', combo: '' });
+                    setImageFile(null);
+                    return;
+                }
+
+                const btn = e.target.querySelector('button[type="submit"]');
+                const originalText = btn.innerText;
+                btn.innerText = "Đang lưu lên Google Sheets...";
+                btn.disabled = true;
+
+                const payload = {
+                    cvkhName: cvkhName,
+                    thang: selectedMonth,
+                    ngay: new Date().getDate(),
+                    vinfast: formData.vinfast,
+                    casa: formData.casa,
+                    creditCard: formData.creditCard,
+                    insurance: formData.insurance,
+                    fx: formData.fx,
+                    combo: formData.combo,
+                    imageName: imageFile ? imageFile.name : '',
+                    imageMimeType: imageFile ? imageFile.type : '',
+                    imageBase64: ''
+                };
+
+                const sendData = async () => {
+                    try {
+                        await fetch(GOOGLE_WEB_APP_URL, {
+                            method: 'POST',
+                            mode: 'no-cors', // Bypass CORS policy restriction from Apps Script
+                            body: JSON.stringify(payload)
+                        });
+                        alert(`Đã lưu dữ liệu cho ${cvkhName} lên Google Sheets thành công!`);
+                        setFormData({ vinfast: '', casa: '', creditCard: '', insurance: '', fx: '', combo: '' });
+                        setImageFile(null);
+                        
+                        // Kích hoạt cập nhật giao diện ngay lập tức
+                        if (onSubmitSuccess) {
+                            onSubmitSuccess(payload);
+                        }
+                    } catch (err) {
+                        alert('Lỗi gửi dữ liệu (khả năng do sai Link Web App): ' + err.message);
+                    } finally {
+                        btn.innerText = originalText;
+                        btn.disabled = false;
+                    }
+                };
+
+                if (imageFile) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        payload.imageBase64 = reader.result.split(',')[1];
+                        sendData();
+                    };
+                    reader.readAsDataURL(imageFile);
+                } else {
+                    sendData();
+                }
+            };
+
+            return (
+                <div className="glass-card mb-8 p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h3 className="text-lg font-bold text-brand-900 mb-4 flex items-center">
+                        <span className="w-2 h-6 bg-brand-500 rounded mr-2"></span>
+                        Nhập liệu hàng ngày - {cvkhName}
+                    </h3>
+                    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {kpiAreas.map(kpi => (
+                            <div key={kpi.id} className="flex flex-col">
+                                <label className="text-sm font-medium text-slate-700 mb-1">{kpi.name} ({kpi.unit})</label>
+                                <input 
+                                    type="number" step="any" min="0" required
+                                    value={formData[kpi.id]} 
+                                    onChange={e => setFormData({...formData, [kpi.id]: e.target.value})}
+                                    className="border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                    placeholder={`Nhập số ${kpi.unit}...`}
+                                />
+                            </div>
+                        ))}
+                        <div className="flex flex-col lg:col-span-3 mt-2">
+                            <label className="text-sm font-medium text-slate-700 mb-1">Đính kèm ảnh báo cáo</label>
+                            <input 
+                                type="file" accept="image/*"
+                                onChange={e => setImageFile(e.target.files[0])}
+                                className="text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100"
+                            />
+                        </div>
+                        <div className="lg:col-span-3 flex justify-end mt-4">
+                            <button type="submit" className="bg-brand-600 text-white font-medium py-2 px-6 rounded-lg hover:bg-brand-700 transition duration-200">
+                                Lưu dữ liệu
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            );
+        };
+
+        // 3.3 Department Summary
+        const DepartmentSummary = ({ monthData, currentDayNumber }) => {
+            const totals = {};
+            const targets = {};
+            
+            kpiAreas.forEach(kpi => {
+                totals[kpi.id] = 0;
+                targets[kpi.id] = 0;
+            });
+
+            cvkhNames.forEach(name => {
+                const cvkhLatestData = monthData[name][currentDayNumber - 1];
+                kpiAreas.forEach(kpi => {
+                    totals[kpi.id] += cvkhLatestData[kpi.id];
+                    targets[kpi.id] += kpi.targets[name];
+                });
+            });
+
+            return (
+                <div className="glass-card mb-8 p-6 rounded-2xl shadow-sm border border-slate-200 bg-gradient-to-br from-brand-50 to-white">
+                    <h3 className="text-lg font-bold text-brand-900 mb-4 flex items-center">
+                        <span className="w-2 h-6 bg-emerald-500 rounded mr-2"></span>
+                        Tổng quan dữ liệu toàn phòng (Tất cả CVKH)
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                        {kpiAreas.map(kpi => {
+                            const totalUnit = formatNumber(totals[kpi.id]);
+                            const percent = ((totals[kpi.id] / targets[kpi.id]) * 100).toFixed(0);
+                            return (
+                                <div key={kpi.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition-shadow">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="text-sm font-medium text-slate-600">{kpi.name}</div>
+                                        <span className="text-lg" aria-hidden="true">{kpi.icon}</span>
+                                    </div>
+                                    <div className="mt-1">
+                                        <div className="flex items-baseline flex-wrap">
+                                            <span className="text-xl font-bold text-slate-800 mr-1">{totalUnit}</span>
+                                            <span className="text-sm font-semibold text-slate-400">/ {formatNumber(targets[kpi.id])}</span>
+                                            <span className="text-xs text-slate-500 ml-1 font-medium">{kpi.unit}</span>
+                                        </div>
+                                        {/* Progress Bar */}
+                                        <div className="w-full bg-slate-100 rounded-full h-2 mt-2">
+                                            <div 
+                                                className="h-2 rounded-full" 
+                                                style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: kpi.color }}
+                                            ></div>
+                                        </div>
+                                        <div className="flex justify-end mt-1 text-xs font-bold" style={{ color: kpi.color }}>
+                                            {percent}% Hoàn thành
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        // 3.4 Main Dashboard Application
+        const Dashboard = () => {
+            const [selectedMonth, setSelectedMonth] = useState('Tháng 3');
+            const [selectedCVKH, setSelectedCVKH] = useState(cvkhNames[0]);
+            
+            const [storeData, setStoreData] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                if (!GOOGLE_WEB_APP_URL) {
+                    setStoreData(mockStore);
+                    setLoading(false);
+                    return;
+                }
+                
+                // Fetch JSON API trực tiếp từ Google Apps Script Web App (Không dùng CSV nữa)
+                fetch(GOOGLE_WEB_APP_URL)
+                    .then(res => res.json())
+                    .then(jsonData => {
+                        if (jsonData.error) throw new Error(jsonData.error);
+                        
+                        // Xây dựng lại data cấu trúc chuẩn từ nguồn JSON 
+                        const parsed = processCsvData(jsonData);
+                        setStoreData(parsed);
+                        setLoading(false);
+                    })
+                    .catch(err => {
+                        console.error('Lỗi khi tải dữ liệu Web App:', err);
+                        alert("Lỗi tải API dữ liệu Google Sheets: " + err.message + "\nHệ thống sẽ hiển thị bảng chỉ tiêu bằng mức 0 tạm thời để phòng tránh lỗi!");
+                        setStoreData(mockStore);
+                        setLoading(false);
+                    });
+            }, []);
+
+            if (loading || !storeData) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+                        <div className="text-xl font-medium text-brand-600 animate-pulse">Đang đồng bộ dữ liệu với Google Sheets...</div>
+                    </div>
+                );
+            }
+
+            // Helper functionality to optimistic UI update locally
+            const handleLocalSubmitSuccess = (payload) => {
+                setStoreData(prev => {
+                    // Deep copy to not mutate React state directly
+                    const newData = JSON.parse(JSON.stringify(prev));
+                    const month = payload.thang;
+                    const cvkh = payload.cvkhName;
+                    const submittedDay = parseInt(payload.ngay);
+
+                    if (newData[month] && newData[month][cvkh]) {
+                        // Cộng dồn toàn bộ dữ liệu mới nhập vào các ngày tính từ ngày hiện tại tới cuối tháng
+                        for (let d = submittedDay - 1; d < newData[month][cvkh].length; d++) {
+                            const dayTarget = newData[month][cvkh][d];
+                            dayTarget.vinfast += parseFloat(payload.vinfast || 0);
+                            dayTarget.casa += parseFloat(payload.casa || 0);
+                            dayTarget.creditCard += parseFloat(payload.creditCard || 0);
+                            dayTarget.insurance += parseFloat(payload.insurance || 0);
+                            dayTarget.fx += parseFloat(payload.fx || 0);
+                            dayTarget.combo += parseFloat(payload.combo || 0);
+                        }
+                    }
+                    return newData;
+                });
+            };
+
+            // Current data state
+            const monthData = storeData[selectedMonth] || mockStore[selectedMonth];
+            const cvkhDailyData = monthData[selectedCVKH];
+            const currentDayNumber = elapsedDaysConfig[selectedMonth];
+            
+            // Latest values for widgets (up to 'currentDayNumber' for realism)
+            const latestData = cvkhDailyData[currentDayNumber - 1];
+
+            // 1. DỮ LIỆU WIDGETS
+            const widgetProps = kpiAreas.map(kpi => ({
+                title: kpi.name,
+                value: latestData[kpi.id],
+                unit: kpi.unit,
+                target: kpi.targets[selectedCVKH],
+                icon: kpi.icon,
+                color: kpi.color
+            }));
+
+            // 2. DỮ LIỆU CHART 1: LINE CHART (Tăng trưởng các mảng qua ngày)
+            // Hiển thị Percentage thay vì giá trị tuyệt đối để bình thường hóa YAxis
+            const chart1Data = cvkhDailyData.slice(0, currentDayNumber).map(d => {
+                const dataPoint = { day: `Ngày ${d.day}` };
+                kpiAreas.forEach(kpi => {
+                    dataPoint[kpi.id] = Number(((d[kpi.id] / kpi.targets[selectedCVKH]) * 100).toFixed(1));
+                });
+                return dataPoint;
+            });
+
+            // 3. DỮ LIỆU CHART 2: STACKED BAR (KPI vs Thời gian)
+            const daysInMonth = selectedMonth === 'Tháng 2' ? 28 : 31;
+            const timeElapsedPercent = Math.round((currentDayNumber / daysInMonth) * 100);
+            
+            const chart2Data = kpiAreas.map(kpi => {
+                const completedPercent = Math.round((latestData[kpi.id] / kpi.targets[selectedCVKH]) * 100);
+                return {
+                    name: kpi.name,
+                    'Hoàn thành (%)': completedPercent,
+                    'Thời gian (%)': timeElapsedPercent,
+                    color: kpi.color,
+                };
+            });
+
+            // 4. DỮ LIỆU CHART 3: RANKING CVKH
+            // Calculate total score = average % of all 6 KPIs
+            const rankingDataRaw = cvkhNames.map(name => {
+                const cvkhEndData = monthData[name][currentDayNumber - 1];
+                let totalPercent = 0;
+                kpiAreas.forEach(kpi => {
+                    totalPercent += (cvkhEndData[kpi.id] / kpi.targets[name]);
+                });
+                const avgScore = Math.round((totalPercent / kpiAreas.length) * 100);
+                
+                let rank = 'Không hoàn thành';
+                if(avgScore >= 100) rank = 'Xuất sắc';
+                else if(avgScore >= 75) rank = 'Hoàn thành chỉ tiêu';
+                
+                return {
+                    name,
+                    score: avgScore,
+                    rank
+                };
+            }).sort((a,b) => b.score - a.score); // Descending
+
+            // RENDER UI
+            return (
+                <div className="min-h-screen pb-12">
+                    {/* HEDADER */}
+                    <div className="bg-brand-900 border-b border-brand-800 shadow-sm sticky top-0 z-10">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                            <div className="flex flex-col sm:flex-row justify-between items-center">
+                                <div className="flex items-center text-white mb-4 sm:mb-0">
+                                    <div>
+                                        <h1 className="text-2xl font-bold tracking-tight">Dashboard theo dõi chỉ tiêu Phòng Cá Nhân</h1>
+                                        <p className="text-sm text-brand-200 mt-1">
+                                            Ngày hiện tại: {`${String(new Date().getDate()).padStart(2, '0')}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()}`}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex space-x-4">
+                                    <div className="relative">
+                                        <select 
+                                            value={selectedMonth} 
+                                            onChange={e => setSelectedMonth(e.target.value)}
+                                            className="appearance-none bg-brand-800 text-white font-medium pl-4 pr-10 py-2 border border-brand-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent-500 transition-colors shadow-sm"
+                                        >
+                                            {months.map(m => <option key={m} value={m}>{m}</option>)}
+                                        </select>
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-brand-300">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                        </div>
+                                    </div>
+                                    <div className="relative">
+                                        <select 
+                                            value={selectedCVKH} 
+                                            onChange={e => setSelectedCVKH(e.target.value)}
+                                            className="appearance-none bg-white text-brand-900 font-medium pl-4 pr-10 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent-500 transition-colors shadow-sm"
+                                        >
+                                            {cvkhNames.map(name => <option key={name} value={name}>{name}</option>)}
+                                        </select>
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-brand-900">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* MAIN CONTENT */}
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+                        
+                        {/* 1. TOÀN PHÒNG SUMMARY */}
+                        <DepartmentSummary monthData={monthData} currentDayNumber={currentDayNumber} />
+
+                        {/* 2. FORM NHẬP LIỆU */}
+                        <DataEntryForm cvkhName={selectedCVKH} selectedMonth={selectedMonth} onSubmitSuccess={handleLocalSubmitSuccess} />
+
+                        {/* WIDGETS GRID */}
+                        <div>
+                            <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
+                                <span className="w-2 h-6 bg-accent-500 rounded mr-2"></span>
+                                Tổng quan chỉ tiêu - {selectedCVKH}
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {widgetProps.map((widget, i) => (
+                                    <SummaryWidget key={i} {...widget} />
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* CHARTS LAYER 1 */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-4">
+                            {/* CHART 1: LINE CHART */}
+                            <div className="glass-card p-6 rounded-2xl shadow-sm border border-slate-200">
+                                <h3 className="text-base font-bold text-brand-900 mb-6 flex justify-between items-center">
+                                    Tiến độ thực hiện theo ngày (% So với Chỉ tiêu)
+                                    <span className="text-xs font-normal bg-brand-50 text-brand-600 px-2 py-1 rounded-md">Giá trị lũy kế</span>
+                                </h3>
+                                <div className="h-80 w-full">
+                                    <ResponsiveContainer>
+                                        <LineChart data={chart1Data} margin={{ top: 5, right: 30, left: -20, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                            <XAxis dataKey="day" tick={{fontSize: 12, fill: '#64748b'}} tickLine={false} axisLine={{stroke: '#cbd5e1'}} minTickGap={30} />
+                                            <YAxis tick={{fontSize: 12, fill: '#64748b'}} tickLine={false} axisLine={false} domain={[0, 'dataMax']} tickFormatter={(v) => `${v}%`} />
+                                            <Tooltip 
+                                                formatter={(value) => `${value}%`}
+                                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                                                itemStyle={{ fontSize: '14px', fontWeight: '500' }}
+                                                labelStyle={{ color: '#0f172a', fontWeight: 'bold', marginBottom: '8px' }}
+                                            />
+                                            <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '13px' }}/>
+                                            {kpiAreas.map(kpi => (
+                                                <Line 
+                                                    key={kpi.id} 
+                                                    type="monotone" 
+                                                    dataKey={kpi.id} 
+                                                    name={kpi.name}
+                                                    stroke={kpi.color} 
+                                                    strokeWidth={3}
+                                                    dot={false}
+                                                    activeDot={{ r: 6, strokeWidth: 0 }}
+                                                />
+                                            ))}
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+
+                            {/* CHART 2: STACKED BAR / COMPOSED (KPI vs Time) */}
+                            <div className="glass-card p-6 rounded-2xl shadow-sm border border-slate-200">
+                                <h3 className="text-base font-bold text-brand-900 mb-6 flex justify-between items-center">
+                                    So sánh Tiến độ với Thời gian
+                                    <span className="text-xs font-medium bg-accent-50 text-accent-600 px-2 py-1 rounded-md">
+                                        Thời gian: {timeElapsedPercent}% của tháng
+                                    </span>
+                                </h3>
+                                <div className="h-80 w-full">
+                                    <ResponsiveContainer>
+                                        <BarChart 
+                                            data={chart2Data} 
+                                            margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
+                                            barSize={24}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                            <XAxis dataKey="name" tick={{fontSize: 12, fill: '#475569'}} axisLine={false} tickLine={false} />
+                                            <YAxis tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} domain={[0, 150]} />
+                                            <Tooltip 
+                                                cursor={{fill: '#f8fafc'}}
+                                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                                            />
+                                            <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '13px' }}/>
+                                            
+                                            {/* Bar shows actual completion */}
+                                            <Bar dataKey="Hoàn thành (%)" radius={[4, 4, 0, 0]}>
+                                                {chart2Data.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                                ))}
+                                            </Bar>
+
+                                            {/* Bar shows time elapsed consistently */}
+                                            <Bar dataKey="Thời gian (%)" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                                            
+                                            {/* Target line at 100% */}
+                                            <ReferenceLine y={100} stroke="#ef4444" strokeDasharray="3 3" label={{ position: 'top', value: '100% KPI', fill: '#ef4444', fontSize: 12 }} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* CHARTS LAYER 2 */}
+                        <div className="grid grid-cols-1 pt-2">
+                            {/* CHART 3: RANKING */}
+                            <div className="glass-card p-6 rounded-2xl shadow-sm border border-slate-200">
+                                <h3 className="text-base font-bold text-brand-900 mb-6 flex items-center">
+                                    <svg className="w-5 h-5 mr-2 text-accent-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                    Bảng xếp hạng CVKH (Trung bình KPI)
+                                </h3>
+                                <div className="h-96 w-full">
+                                    <ResponsiveContainer>
+                                        <BarChart 
+                                            data={rankingDataRaw} 
+                                            layout="vertical"
+                                            margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
+                                            barSize={32}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                                            <XAxis type="number" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} domain={[0, 'dataMax + 20']} />
+                                            <YAxis dataKey="name" type="category" tick={{fontSize: 13, fontWeight: 500, fill: '#1e293b'}} axisLine={false} tickLine={false} width={100} />
+                                            <Tooltip 
+                                                cursor={{fill: '#f1f5f9'}}
+                                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                                            />
+                                            <Bar dataKey="score" name="Điểm trung bình KPI (%)" radius={[0, 6, 6, 0]}>
+                                                {rankingDataRaw.map((entry, index) => {
+                                                    let color = '#3b82f6'; // default Hoàn thành
+                                                    if(entry.rank === 'Xuất sắc') color = '#10b981'; // green for Xuất sắc
+                                                    if(entry.rank === 'Không hoàn thành') color = '#ef4444'; // red for Không hoàn thành
+                                                    return <Cell key={`cell-${index}`} fill={color} />;
+                                                })}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                {/* Legend for rankings */}
+                                <div className="flex justify-center mt-4 space-x-6 text-sm font-medium">
+                                    <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-emerald-500 mr-2"></span> Xuất sắc (&ge; 100%)</div>
+                                    <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-blue-500 mr-2"></span> Hoàn thành chỉ tiêu (75% - 99%)</div>
+                                    <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-red-500 mr-2"></span> Không hoàn thành (&lt; 75%)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Dashboard />);
+    </script>
+</body>
+</html>
