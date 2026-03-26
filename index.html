@@ -85,7 +85,7 @@
 
         // ---- 1. CONFIGURATION & ICONS ----
         const cvkhNames = ['Nguyễn Tuấn Anh', 'Đỗ Minh Hiếu', 'Nguyễn Anh Quân', 'Hoàng Hải Yến', 'Đỗ Quang Sơn'];
-        const months = ['Tháng 1', 'Tháng 2', 'Tháng 3'];
+        const months = Array.from({length: 12}, (_, i) => `Tháng ${i + 1}`);
 
         // Cập nhật target cho từng CVKH tại đây:
         const kpiAreas = [
@@ -97,8 +97,25 @@
             { id: 'combo', name: 'Combo Tài lộc', unit: 'Gói', color: '#ec4899', icon: '🎁', targets: { 'Nguyễn Tuấn Anh': 15, 'Đỗ Minh Hiếu': 20, 'Nguyễn Anh Quân': 15, 'Hoàng Hải Yến': 15, 'Đỗ Quang Sơn': 25 } } 
         ];
         
-        // Tự động lấy số ngày hiện tại cho tiến trình Tháng 3 (Hoặc tháng đang chạy)
-        const elapsedDaysConfig = { 'Tháng 1': 31, 'Tháng 2': 28, 'Tháng 3': new Date().getDate() };
+        // Tự động lấy số ngày hiện tại cho tiến trình tháng đang chạy
+        const getCurrentMonthString = () => `Tháng ${new Date().getMonth() + 1}`;
+        const getDaysInMonth = (monthStr) => {
+            const monthNum = parseInt(monthStr.replace('Tháng ', ''));
+            const year = new Date().getFullYear();
+            return new Date(year, monthNum, 0).getDate();
+        };
+        const getElapsedDays = (monthStr) => {
+            const currentMonth = getCurrentMonthString();
+            if (monthStr === currentMonth) {
+                return new Date().getDate();
+            }
+            const monthNum = parseInt(monthStr.replace('Tháng ', ''));
+            const currentMonthNum = new Date().getMonth() + 1;
+            if (monthNum < currentMonthNum) {
+                 return getDaysInMonth(monthStr); 
+            }
+            return 1; // Safeguard for future months
+        };
 
         const HeaderIcon = () => (
           <svg className="w-8 h-8 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,7 +128,7 @@
             let data = {};
             months.forEach(month => {
                 data[month] = {};
-                const daysInMonth = month === 'Tháng 2' ? 28 : 31;
+                const daysInMonth = getDaysInMonth(month);
 
                 cvkhNames.forEach(cvkh => {                    
                     let dailyData = [];
@@ -138,7 +155,7 @@
             let data = {};
             months.forEach(month => {
                 data[month] = {};
-                const daysInMonth = month === 'Tháng 2' ? 28 : 31;
+                const daysInMonth = getDaysInMonth(month);
                 
                 cvkhNames.forEach(cvkh => {
                     let dailyData = [];
@@ -173,13 +190,35 @@
             return data;
         };
 
+        const processTargetsData = (targetRows) => {
+            let targetsMap = {};
+            targetRows.forEach(row => {
+               const month = row['Tháng'];
+               const cvkh = row['Tên CVKH'];
+               if (!month || !cvkh) return;
+               if (!targetsMap[month]) targetsMap[month] = {};
+               targetsMap[month][cvkh] = {
+                   vinfast: parseFloat(row['Vinfast'] || 0),
+                   casa: parseFloat(row['CASA'] || 0),
+                   creditCard: parseFloat(row['Thẻ tín dụng'] || 0),
+                   insurance: parseFloat(row['Bảo hiểm'] || 0),
+                   fx: parseFloat(row['Ngoại tệ'] || 0),
+                   combo: parseFloat(row['Combo'] || 0)
+               };
+            });
+            return targetsMap;
+        };
+
         // ---- 3. COMPONENTS ----
 
         // 3.1. Widget Card
-        const SummaryWidget = ({ title, value, unit, target, icon, color }) => {
+        const SummaryWidget = ({ id, title, value, unit, target, icon, color, onClick }) => {
             const percent = Math.min((value / target) * 100, 100).toFixed(0);
             return (
-                <div className="glass-card p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between animate-fade-in hover:shadow-md transition-shadow">
+                <div 
+                    className="glass-card p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between animate-fade-in hover:shadow-md transition-all cursor-pointer hover:bg-slate-50 hover:border-brand-300"
+                    onClick={() => onClick && onClick(id)}
+                >
                     <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center space-x-2">
                             <span className="text-2xl" aria-hidden="true">{icon}</span>
@@ -323,19 +362,20 @@
         };
 
         // 3.3 Department Summary
-        const DepartmentSummary = ({ monthData, currentDayNumber }) => {
+        const DepartmentSummary = ({ monthData, currentDayNumber, currentKpiAreas, onMetricClick }) => {
             const totals = {};
             const targets = {};
+            const areasToUse = currentKpiAreas || kpiAreas;
             
-            kpiAreas.forEach(kpi => {
+            areasToUse.forEach(kpi => {
                 totals[kpi.id] = 0;
                 targets[kpi.id] = 0;
             });
 
             cvkhNames.forEach(name => {
                 const cvkhLatestData = monthData[name][currentDayNumber - 1];
-                kpiAreas.forEach(kpi => {
-                    totals[kpi.id] += cvkhLatestData[kpi.id];
+                areasToUse.forEach(kpi => {
+                    totals[kpi.id] += (cvkhLatestData ? cvkhLatestData[kpi.id] : 0);
                     targets[kpi.id] += kpi.targets[name];
                 });
             });
@@ -347,12 +387,16 @@
                         Tổng quan dữ liệu toàn phòng (Tất cả CVKH)
                     </h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                        {kpiAreas.map(kpi => {
+                        {areasToUse.map(kpi => {
                             const totalUnit = formatNumber(totals[kpi.id]);
                             const percent = ((totals[kpi.id] / targets[kpi.id]) * 100).toFixed(0);
                             return (
-                                <div key={kpi.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition-shadow">
-                                    <div className="flex justify-between items-start mb-2">
+                                <div 
+                                    key={kpi.id} 
+                                    className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition-all cursor-pointer hover:bg-brand-50 hover:border-brand-300 relative group"
+                                    onClick={() => onMetricClick && onMetricClick(kpi.id)}
+                                >
+                                    <div className="flex justify-between items-start mb-2 relative z-10">
                                         <div className="text-sm font-medium text-slate-600">{kpi.name}</div>
                                         <span className="text-lg" aria-hidden="true">{kpi.icon}</span>
                                     </div>
@@ -381,17 +425,123 @@
             );
         };
 
-        // 3.4 Main Dashboard Application
+        // 3.4 Modals
+        const DepartmentMetricModal = ({ metricId, monthData, currentDayNumber, kpiAreas, cvkhNames, onClose }) => {
+            const metric = kpiAreas.find(k => k.id === metricId);
+            if (!metric) return null;
+
+            const chartData = cvkhNames.map(name => {
+                const actual = monthData[name][currentDayNumber - 1]?.[metricId] || 0;
+                const target = metric.targets[name];
+                return {
+                    name: name,
+                    'Đã thực hiện': actual,
+                    'KPI giao': target,
+                    'Tỷ lệ (%)': Number(((actual / target) * 100).toFixed(1))
+                }
+            });
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                            <h3 className="text-lg font-bold text-slate-800 flex items-center">
+                                <span className="text-2xl mr-2" aria-hidden="true">{metric.icon}</span>
+                                Thực hiện toàn phòng: {metric.name}
+                            </h3>
+                            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                        <div className="p-6 w-full h-[500px] sm:h-[400px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="name" tick={{fontSize: 12, fill: '#475569'}} axisLine={false} tickLine={false} />
+                                    <YAxis yAxisId="left" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                                    <YAxis yAxisId="right" orientation="right" tick={{fontSize: 12, fill: '#64748b'}} tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} />
+                                    <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} />
+                                    <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '13px' }}/>
+                                    <Bar yAxisId="left" dataKey="Đã thực hiện" fill={metric.color} radius={[4, 4, 0, 0]} maxBarSize={60} />
+                                    <Bar yAxisId="left" dataKey="KPI giao" fill="#cbd5e1" radius={[4, 4, 0, 0]} maxBarSize={60} />
+                                    <Line yAxisId="right" type="monotone" dataKey="Tỷ lệ (%)" stroke="#ef4444" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} />
+                                </ComposedChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const CVKHDailyMetricModal = ({ metricId, cvkhName, monthData, currentDayNumber, kpiAreas, onClose }) => {
+            const metric = kpiAreas.find(k => k.id === metricId);
+            if (!metric) return null;
+
+            const cvkhData = monthData[cvkhName];
+            const chartData = [];
+            
+            for (let i = 0; i < currentDayNumber; i++) {
+                const today = cvkhData[i];
+                const yesterday = i > 0 ? cvkhData[i-1] : { [metricId]: 0 };
+                const dailyValue = today[metricId] - yesterday[metricId];
+                
+                chartData.push({
+                    day: `Ngày ${today.day}`,
+                    'Thực hiện': Number(dailyValue.toFixed(2))
+                });
+            }
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                            <h3 className="text-lg font-bold text-slate-800 flex items-center">
+                                <span className="text-2xl mr-2" aria-hidden="true">{metric.icon}</span>
+                                Chi tiết ngày: {metric.name} ({cvkhName})
+                            </h3>
+                            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                        <div className="p-6 w-full h-[500px] sm:h-[400px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 25 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="day" angle={-45} textAnchor="end" tick={{fontSize: 11, fill: '#475569'}} axisLine={false} tickLine={false} height={60} />
+                                    <YAxis tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                                    <Tooltip 
+                                        cursor={{fill: '#f8fafc'}}
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                                    />
+                                    <Bar dataKey="Thực hiện" fill={metric.color} radius={[2, 2, 0, 0]} maxBarSize={40}>
+                                        {chartData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry['Thực hiện'] > 0 ? metric.color : '#e2e8f0'} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 3.5 Main Dashboard Application
         const Dashboard = () => {
-            const [selectedMonth, setSelectedMonth] = useState('Tháng 3');
+            const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthString());
             const [selectedCVKH, setSelectedCVKH] = useState(cvkhNames[0]);
             
+            const [selectedDeptMetric, setSelectedDeptMetric] = useState(null);
+            const [selectedCvkhMetric, setSelectedCvkhMetric] = useState(null);
+            
             const [storeData, setStoreData] = useState(null);
+            const [targetsData, setTargetsData] = useState(null);
             const [loading, setLoading] = useState(true);
 
             useEffect(() => {
                 if (!GOOGLE_WEB_APP_URL) {
                     setStoreData(mockStore);
+                    setTargetsData({});
                     setLoading(false);
                     return;
                 }
@@ -403,14 +553,23 @@
                         if (jsonData.error) throw new Error(jsonData.error);
                         
                         // Xây dựng lại data cấu trúc chuẩn từ nguồn JSON 
-                        const parsed = processCsvData(jsonData);
+                        const isLegacyFormat = Array.isArray(jsonData);
+                        const rawData = isLegacyFormat ? jsonData : (jsonData.data || []);
+                        const rawTargets = isLegacyFormat ? [] : (jsonData.targets || []);
+
+                        const parsed = processCsvData(rawData);
                         setStoreData(parsed);
+
+                        const parsedTargets = processTargetsData(rawTargets);
+                        setTargetsData(parsedTargets);
+
                         setLoading(false);
                     })
                     .catch(err => {
                         console.error('Lỗi khi tải dữ liệu Web App:', err);
                         alert("Lỗi tải API dữ liệu Google Sheets: " + err.message + "\nHệ thống sẽ hiển thị bảng chỉ tiêu bằng mức 0 tạm thời để phòng tránh lỗi!");
                         setStoreData(mockStore);
+                        setTargetsData({});
                         setLoading(false);
                     });
             }, []);
@@ -451,37 +610,54 @@
             // Current data state
             const monthData = storeData[selectedMonth] || mockStore[selectedMonth];
             const cvkhDailyData = monthData[selectedCVKH];
-            const currentDayNumber = elapsedDaysConfig[selectedMonth];
+            const currentDayNumber = getElapsedDays(selectedMonth);
             
             // Latest values for widgets (up to 'currentDayNumber' for realism)
             const latestData = cvkhDailyData[currentDayNumber - 1];
 
+            // Dynamically override targets for current month
+            const getDynamicKpiAreas = (month) => {
+                return kpiAreas.map(kpi => {
+                    const newTargets = { ...kpi.targets };
+                    cvkhNames.forEach(name => {
+                        if (targetsData && targetsData[month] && targetsData[month][name] && targetsData[month][name][kpi.id] !== undefined) {
+                            newTargets[name] = targetsData[month][name][kpi.id];
+                        }
+                    });
+                    return { ...kpi, targets: newTargets };
+                });
+            };
+
+            const currentKpiAreas = getDynamicKpiAreas(selectedMonth);
+
             // 1. DỮ LIỆU WIDGETS
-            const widgetProps = kpiAreas.map(kpi => ({
+            const widgetProps = currentKpiAreas.map(kpi => ({
+                id: kpi.id,
                 title: kpi.name,
-                value: latestData[kpi.id],
+                value: latestData ? latestData[kpi.id] : 0,
                 unit: kpi.unit,
                 target: kpi.targets[selectedCVKH],
                 icon: kpi.icon,
-                color: kpi.color
+                color: kpi.color,
+                onClick: setSelectedCvkhMetric
             }));
 
             // 2. DỮ LIỆU CHART 1: LINE CHART (Tăng trưởng các mảng qua ngày)
             // Hiển thị Percentage thay vì giá trị tuyệt đối để bình thường hóa YAxis
             const chart1Data = cvkhDailyData.slice(0, currentDayNumber).map(d => {
                 const dataPoint = { day: `Ngày ${d.day}` };
-                kpiAreas.forEach(kpi => {
+                currentKpiAreas.forEach(kpi => {
                     dataPoint[kpi.id] = Number(((d[kpi.id] / kpi.targets[selectedCVKH]) * 100).toFixed(1));
                 });
                 return dataPoint;
             });
 
             // 3. DỮ LIỆU CHART 2: STACKED BAR (KPI vs Thời gian)
-            const daysInMonth = selectedMonth === 'Tháng 2' ? 28 : 31;
+            const daysInMonth = getDaysInMonth(selectedMonth);
             const timeElapsedPercent = Math.round((currentDayNumber / daysInMonth) * 100);
             
-            const chart2Data = kpiAreas.map(kpi => {
-                const completedPercent = Math.round((latestData[kpi.id] / kpi.targets[selectedCVKH]) * 100);
+            const chart2Data = currentKpiAreas.map(kpi => {
+                const completedPercent = latestData ? Math.round((latestData[kpi.id] / kpi.targets[selectedCVKH]) * 100) : 0;
                 return {
                     name: kpi.name,
                     'Hoàn thành (%)': completedPercent,
@@ -495,10 +671,10 @@
             const rankingDataRaw = cvkhNames.map(name => {
                 const cvkhEndData = monthData[name][currentDayNumber - 1];
                 let totalPercent = 0;
-                kpiAreas.forEach(kpi => {
-                    totalPercent += (cvkhEndData[kpi.id] / kpi.targets[name]);
+                currentKpiAreas.forEach(kpi => {
+                    totalPercent += (cvkhEndData ? cvkhEndData[kpi.id] : 0) / kpi.targets[name];
                 });
-                const avgScore = Math.round((totalPercent / kpiAreas.length) * 100);
+                const avgScore = Math.round((totalPercent / currentKpiAreas.length) * 100);
                 
                 let rank = 'Không hoàn thành';
                 if(avgScore >= 100) rank = 'Xuất sắc';
@@ -560,7 +736,7 @@
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
                         
                         {/* 1. TOÀN PHÒNG SUMMARY */}
-                        <DepartmentSummary monthData={monthData} currentDayNumber={currentDayNumber} />
+                        <DepartmentSummary monthData={monthData} currentDayNumber={currentDayNumber} currentKpiAreas={currentKpiAreas} onMetricClick={setSelectedDeptMetric} />
 
                         {/* 2. FORM NHẬP LIỆU */}
                         <DataEntryForm cvkhName={selectedCVKH} selectedMonth={selectedMonth} onSubmitSuccess={handleLocalSubmitSuccess} />
@@ -599,7 +775,7 @@
                                                 labelStyle={{ color: '#0f172a', fontWeight: 'bold', marginBottom: '8px' }}
                                             />
                                             <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '13px' }}/>
-                                            {kpiAreas.map(kpi => (
+                                            {currentKpiAreas.map(kpi => (
                                                 <Line 
                                                     key={kpi.id} 
                                                     type="monotone" 
@@ -700,6 +876,29 @@
                                 </div>
                             </div>
                         </div>
+
+                        {/* Modals */}
+                        {selectedDeptMetric && (
+                            <DepartmentMetricModal 
+                                metricId={selectedDeptMetric}
+                                monthData={monthData}
+                                currentDayNumber={currentDayNumber}
+                                kpiAreas={currentKpiAreas}
+                                cvkhNames={cvkhNames}
+                                onClose={() => setSelectedDeptMetric(null)}
+                            />
+                        )}
+
+                        {selectedCvkhMetric && (
+                            <CVKHDailyMetricModal 
+                                metricId={selectedCvkhMetric}
+                                cvkhName={selectedCVKH}
+                                monthData={monthData}
+                                currentDayNumber={currentDayNumber}
+                                kpiAreas={currentKpiAreas}
+                                onClose={() => setSelectedCvkhMetric(null)}
+                            />
+                        )}
 
                     </div>
                 </div>
