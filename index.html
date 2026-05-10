@@ -93,8 +93,8 @@
             { id: 'casa', name: 'Tăng trưởng CASA', unit: 'Triệu VNĐ', color: '#ea580c', icon: '💰', targets: { 'Nguyễn Tuấn Anh': 1000, 'Đỗ Minh Hiếu': 1000, 'Nguyễn Anh Quân': 1000, 'Hoàng Hải Yến': 1000, 'Đỗ Quang Sơn': 1000 } }, 
             { id: 'creditCard', name: 'Thẻ tín dụng', unit: 'Thẻ', color: '#8b5cf6', icon: '💳', targets: { 'Nguyễn Tuấn Anh': 50, 'Đỗ Minh Hiếu': 30, 'Nguyễn Anh Quân': 25, 'Hoàng Hải Yến': 25, 'Đỗ Quang Sơn': 40 } }, 
             { id: 'insurance', name: 'Bảo hiểm', unit: 'Tr VNĐ', color: '#10b981', icon: '🛡️', targets: { 'Nguyễn Tuấn Anh': 30, 'Đỗ Minh Hiếu': 30, 'Nguyễn Anh Quân': 30, 'Hoàng Hải Yến': 30, 'Đỗ Quang Sơn': 30 } }, 
-            { id: 'fx', name: 'Lợi nhuận ngoại tệ', unit: 'Triệu VNĐ', color: '#f59e0b', icon: '💱', targets: { 'Nguyễn Tuấn Anh': 200, 'Đỗ Minh Hiếu': 150, 'Nguyễn Anh Quân': 300 , 'Hoàng Hải Yến': 300, 'Đỗ Quang Sơn': 200 } }, 
-            { id: 'combo', name: 'Tài khoản HKD', unit: 'Tài khoản', color: '#ec4899', icon: '🎁', targets: { 'Nguyễn Tuấn Anh': 15, 'Đỗ Minh Hiếu': 20, 'Nguyễn Anh Quân': 15, 'Hoàng Hải Yến': 15, 'Đỗ Quang Sơn': 25 } } 
+            { id: 'fx', name: 'Thu Dịch Vụ (Gồm Bảo hiểm, TK số đẹp, Phí cấp tín dụng)', unit: 'Triệu VNĐ', color: '#f59e0b', icon: '💱', targets: { 'Nguyễn Tuấn Anh': 200, 'Đỗ Minh Hiếu': 150, 'Nguyễn Anh Quân': 300 , 'Hoàng Hải Yến': 300, 'Đỗ Quang Sơn': 200 } }, 
+            { id: 'combo', name: 'Huy động CKH', unit: 'Tr VNĐ', color: '#ec4899', icon: '🎁', targets: { 'Nguyễn Tuấn Anh': 15, 'Đỗ Minh Hiếu': 20, 'Nguyễn Anh Quân': 15, 'Hoàng Hải Yến': 15, 'Đỗ Quang Sơn': 25 } } 
         ];
         
         // Tự động lấy số ngày hiện tại cho tiến trình tháng đang chạy
@@ -166,12 +166,12 @@
                         
                         matchingRows.forEach(row => {
                             if (!row['Tháng']) return;
-                            cumulative.vinfast += parseFloat(row['Vinfast'] || 0);
+                            cumulative.vinfast += parseFloat(row['Cho Vay'] || 0);
                             cumulative.casa += parseFloat(row['CASA'] || 0);
                             cumulative.creditCard += parseFloat(row['Thẻ tín dụng'] || 0);
                             cumulative.insurance += parseFloat(row['Bảo hiểm'] || 0);
-                            cumulative.fx += parseFloat(row['Ngoại tệ'] || 0);
-                            cumulative.combo += parseFloat(row['Combo'] || 0);
+                            cumulative.fx += parseFloat(row['Thu Dịch Vụ'] || 0);
+                            cumulative.combo += parseFloat(row['Huy động CKH'] || 0);
                         });
                         
                         dailyData.push({
@@ -198,12 +198,12 @@
                if (!month || !cvkh) return;
                if (!targetsMap[month]) targetsMap[month] = {};
                targetsMap[month][cvkh] = {
-                   vinfast: parseFloat(row['Vinfast'] || 0),
+                   vinfast: parseFloat(row['Cho Vay'] || 0),
                    casa: parseFloat(row['CASA'] || 0),
                    creditCard: parseFloat(row['Thẻ tín dụng'] || 0),
                    insurance: parseFloat(row['Bảo hiểm'] || 0),
-                   fx: parseFloat(row['Ngoại tệ'] || 0),
-                   combo: parseFloat(row['Combo'] || 0)
+                   fx: parseFloat(row['Thu Dịch Vụ'] || 0),
+                   combo: parseFloat(row['Huy động CKH'] || 0)
                };
             });
             return targetsMap;
@@ -910,23 +910,43 @@
             });
 
             // 4. DỮ LIỆU CHART 3: RANKING CVKH
-            // Calculate total score = average % of all 6 KPIs
+            const kpiWeights = {
+                vinfast: 0.25,
+                combo: 0.1875,
+                casa: 0.125,
+                insurance: 0.125,
+                fx: 0.125,
+                creditCard: 0.1875
+            };
+            
             const rankingDataRaw = cvkhNames.map(name => {
                 const cvkhEndData = monthData[name][currentDayNumber - 1];
-                let totalPercent = 0;
-                currentKpiAreas.forEach(kpi => {
-                    totalPercent += (cvkhEndData ? cvkhEndData[kpi.id] : 0) / kpi.targets[name];
-                });
-                const avgScore = Math.round((totalPercent / currentKpiAreas.length) * 100);
+                let totalScore = 0;
+                let contributions = {};
                 
-                let rank = 'Không hoàn thành';
-                if(avgScore >= 100) rank = 'Xuất sắc';
-                else if(avgScore >= 75) rank = 'Hoàn thành chỉ tiêu';
+                currentKpiAreas.forEach(kpi => {
+                    const weight = kpiWeights[kpi.id] || 0;
+                    const actual = cvkhEndData ? cvkhEndData[kpi.id] : 0;
+                    const target = kpi.targets[name];
+                    const percent = target > 0 ? (actual / target) * 100 : 0;
+                    const weightedScore = percent * weight;
+                    
+                    contributions[kpi.id] = Number(weightedScore.toFixed(2));
+                    totalScore += weightedScore;
+                });
+                
+                const finalScore = Number(totalScore.toFixed(1));
+                
+                let rank = 'Yếu';
+                if(finalScore >= 100) rank = 'Xuất sắc';
+                else if(finalScore >= 80) rank = 'Giỏi';
+                else if(finalScore >= 50) rank = 'Trung bình';
                 
                 return {
                     name,
-                    score: avgScore,
-                    rank
+                    score: finalScore,
+                    rank,
+                    ...contributions
                 };
             }).sort((a,b) => b.score - a.score); // Descending
 
@@ -1100,23 +1120,37 @@
                                             <Tooltip 
                                                 cursor={{fill: '#f1f5f9'}}
                                                 contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                                                formatter={(value, name) => [`${value}%`, name]}
+                                                labelFormatter={(label, payload) => {
+                                                    const total = payload && payload.length > 0 ? payload[0].payload.score : 0;
+                                                    return `${label} - Tổng điểm: ${total}%`;
+                                                }}
                                             />
-                                            <Bar dataKey="score" name="Điểm trung bình KPI (%)" radius={[0, 6, 6, 0]}>
-                                                {rankingDataRaw.map((entry, index) => {
-                                                    let color = '#3b82f6'; // default Hoàn thành
-                                                    if(entry.rank === 'Xuất sắc') color = '#10b981'; // green for Xuất sắc
-                                                    if(entry.rank === 'Không hoàn thành') color = '#ef4444'; // red for Không hoàn thành
-                                                    return <Cell key={`cell-${index}`} fill={color} />;
-                                                })}
-                                            </Bar>
+                                            <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '13px' }}/>
+                                            {currentKpiAreas.map((kpi, index) => {
+                                                const isLast = index === currentKpiAreas.length - 1;
+                                                return (
+                                                    <Bar 
+                                                        key={kpi.id} 
+                                                        dataKey={kpi.id} 
+                                                        name={`${kpi.name} (${kpiWeights[kpi.id] * 100}%)`} 
+                                                        stackId="a" 
+                                                        fill={kpi.color} 
+                                                        radius={isLast ? [0, 6, 6, 0] : [0, 0, 0, 0]} 
+                                                    />
+                                                );
+                                            })}
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
-                                {/* Legend for rankings */}
-                                <div className="flex justify-center mt-4 space-x-6 text-sm font-medium">
-                                    <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-emerald-500 mr-2"></span> Xuất sắc (&ge; 100%)</div>
-                                    <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-blue-500 mr-2"></span> Hoàn thành chỉ tiêu (75% - 99%)</div>
-                                    <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-red-500 mr-2"></span> Không hoàn thành (&lt; 75%)</div>
+                                <div className="flex flex-col items-center mt-6 text-sm font-medium text-slate-700">
+                                    <span className="font-bold mb-3 text-brand-900">Mốc KPI:</span>
+                                    <div className="flex flex-wrap justify-center gap-y-2 gap-x-6">
+                                        <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-rose-500 mr-2 shadow-sm"></span> Yếu: Dưới 50%</div>
+                                        <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-amber-500 mr-2 shadow-sm"></span> Trung bình: 50-80%</div>
+                                        <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-blue-500 mr-2 shadow-sm"></span> Giỏi: 80-100%</div>
+                                        <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-emerald-500 mr-2 shadow-sm"></span> Xuất sắc: Trên 100%</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
