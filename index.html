@@ -911,9 +911,9 @@
 
             // 4. DỮ LIỆU CHART 3: RANKING CVKH
             const kpiWeights = {
-                vinfast: 0.25,
-                combo: 0.1875,
-                casa: 0.125,
+                vinfast: 0.125,
+                combo: 0.25,
+                casa: 0.1875,
                 insurance: 0.125,
                 fx: 0.125,
                 creditCard: 0.1875
@@ -1090,8 +1090,8 @@
                                             {/* Bar shows time elapsed consistently */}
                                             <Bar dataKey="Thời gian (%)" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
                                             
-                                            {/* Target line at 100% */}
-                                            <ReferenceLine y={100} stroke="#ef4444" strokeDasharray="3 3" label={{ position: 'top', value: '100% KPI', fill: '#ef4444', fontSize: 12 }} />
+                                            {/* Target line at time elapsed */}
+                                            <ReferenceLine y={timeElapsedPercent} stroke="#ef4444" strokeDasharray="3 3" strokeWidth={2} label={{ position: 'top', value: `Tiến độ tháng: ${timeElapsedPercent}%`, fill: '#ef4444', fontSize: 12, fontWeight: 'bold' }} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -1111,7 +1111,7 @@
                                         <BarChart 
                                             data={rankingDataRaw} 
                                             layout="vertical"
-                                            margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
+                                            margin={{ top: 25, right: 50, left: 10, bottom: 5 }}
                                             barSize={32}
                                         >
                                             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
@@ -1127,6 +1127,7 @@
                                                 }}
                                             />
                                             <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '13px' }}/>
+                                            <ReferenceLine x={timeElapsedPercent} stroke="#ef4444" strokeDasharray="3 3" strokeWidth={2} label={{ position: 'top', value: `Thời gian: ${timeElapsedPercent}%`, fill: '#ef4444', fontSize: 12, fontWeight: 'bold' }} />
                                             {currentKpiAreas.map((kpi, index) => {
                                                 const isLast = index === currentKpiAreas.length - 1;
                                                 return (
